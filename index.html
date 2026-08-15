@@ -167,48 +167,60 @@
           return;
         }
 
-        var nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
-        var nativeCancelAnimationFrame = window.cancelAnimationFrame.bind(window);
-        var fpsLimit = 60;
-        var rafMap = {};
-        var nextId = 1;
+        var fpsLimit = Math.max(1, Math.min(250, Number(fpsInput.value) || 60));
+        var lastFrameTime = 0;
 
-        function scheduleFrame(callback) {
-          var id = nextId++;
-          var lastTimestamp = rafMap[id + 1000000];
+        function installBrowserLoopHook() {
+          if (!window.Browser || !window.Browser.mainLoop || !window.Browser.requestAnimationFrame) {
+            return false;
+          }
 
-          rafMap[id] = nativeRequestAnimationFrame(function(timestamp) {
-            delete rafMap[id];
-            if (lastTimestamp !== undefined && timestamp - lastTimestamp < 1000 / fpsLimit) {
-              var remaining = (1000 / fpsLimit) - (timestamp - lastTimestamp);
-              rafMap[id] = setTimeout(function() {
-                delete rafMap[id];
-                callback(timestamp + remaining);
-              }, remaining);
-              return;
+          var browser = window.Browser;
+          var nativeRequestAnimationFrame = browser.requestAnimationFrame.bind(browser);
+
+          browser.requestAnimationFrame = function(callback) {
+            if (typeof callback !== 'function') {
+              return nativeRequestAnimationFrame(callback);
             }
-            rafMap[id + 1000000] = timestamp;
-            callback(timestamp);
-          });
-          return id;
+
+            return nativeRequestAnimationFrame(function(timestamp) {
+              var now = typeof performance !== 'undefined' ? performance.now() : timestamp;
+              if (lastFrameTime && now - lastFrameTime < 1000 / fpsLimit) {
+                var waitMs = (1000 / fpsLimit) - (now - lastFrameTime);
+                setTimeout(function() {
+                  callback(performance.now ? performance.now() : timestamp + waitMs);
+                }, waitMs);
+                return;
+              }
+              lastFrameTime = now;
+              callback(timestamp);
+            });
+          };
+
+          var originalScheduler = browser.mainLoop.scheduler;
+          browser.mainLoop.scheduler = function() {
+            if (browser.mainLoop.method === 'rAF') {
+              browser.requestAnimationFrame(browser.mainLoop.runner);
+            } else if (browser.mainLoop.method === 'timeout') {
+              var timeUntilNextTick = Math.max(0, browser.mainLoop.tickStartTime + browser.mainLoop.timingValue - (performance.now ? performance.now() : Date.now())) | 0;
+              setTimeout(browser.mainLoop.runner, Math.max(0, timeUntilNextTick));
+            } else if (originalScheduler) {
+              originalScheduler.call(browser.mainLoop);
+            }
+          };
+
+          window.__gtagwebFpsCapInstalled = true;
+          window.__gtagwebSetFpsLimit = function(limit) {
+            fpsLimit = Math.max(1, Math.min(250, Number(limit) || 60));
+          };
+          return true;
         }
 
-        window.requestAnimationFrame = function(callback) {
-          return scheduleFrame(callback);
-        };
-
-        window.cancelAnimationFrame = function(id) {
-          if (rafMap[id]) {
-            clearTimeout(rafMap[id]);
-            delete rafMap[id];
-          }
-          return nativeCancelAnimationFrame(id);
-        };
-
-        window.__gtagwebFpsCapInstalled = true;
-        window.__gtagwebSetFpsLimit = function(limit) {
-          fpsLimit = Math.max(1, Math.min(250, Number(limit) || 60));
-        };
+        if (!installBrowserLoopHook()) {
+          window.__gtagwebSetFpsLimit = function(limit) {
+            fpsLimit = Math.max(1, Math.min(250, Number(limit) || 60));
+          };
+        }
       }
 
       function updateFpsCap(value) {
@@ -219,7 +231,14 @@
         }
       }
 
-      installFpsCap();
+      function ensureUnityFpsCap() {
+        if (window.Browser && window.Browser.mainLoop && window.Browser.requestAnimationFrame) {
+          installFpsCap();
+          return true;
+        }
+        return false;
+      }
+
       fpsInput.addEventListener('change', function(event) {
         updateFpsCap(event.target.value);
       });
@@ -234,6 +253,14 @@
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
+        var waitForUnityLoop = function() {
+          if (ensureUnityFpsCap()) {
+            return;
+          }
+          setTimeout(waitForUnityLoop, 100);
+        };
+        waitForUnityLoop();
+
         createUnityInstance(canvas, config, (progress) => {
           progressBarFull.style.width = 100 * progress + "%";
               }).then((unityInstance) => {
@@ -241,6 +268,7 @@
                 fullscreenButton.onclick = () => {
                   unityInstance.SetFullscreen(1);
                 };
+                ensureUnityFpsCap();
               }).catch((message) => {
                 alert(message);
               });
