@@ -130,13 +130,19 @@
         });
       }
 
+      webXRButton.onclick = requestWebXR;
+
       if (navigator.xr && navigator.xr.isSessionSupported) {
         navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-          if (supported) {
-            webXRButton.style.display = 'block';
-            webXRButton.onclick = requestWebXR;
+          if (!supported) {
+            webXRButton.textContent = 'VR Not Supported';
+            webXRButton.style.opacity = '0.75';
           }
+        }).catch(() => {
+          webXRButton.textContent = 'Open in VR';
         });
+      } else {
+        webXRButton.textContent = 'Open in VR';
       }
 
       var script = document.createElement("script");
