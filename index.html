@@ -19,11 +19,16 @@
       <div id="unity-warning"> </div>
       <div id="unity-footer">
         <div id="unity-webgl-logo"></div>
+        <div id="unity-fps-wrap">
+          <label for="unity-fps-cap" style="font-size: 12px;">FPS</label>
+          <input id="unity-fps-cap" type="range" min="1" max="250" value="60" />
+          <output id="unity-fps-value" for="unity-fps-cap">60</output>
+        </div>
+        <button id="unity-webxr-button" type="button">VR Unavailable</button>
         <div id="unity-fullscreen-button"></div>
         <div id="unity-build-title">gorilla tag web</div>
       </div>
     </div>
-    <button id="unity-webxr-button" type="button">Open in VR</button>
     <script>
 
       var container = document.querySelector("#unity-container");
@@ -33,6 +38,8 @@
       var fullscreenButton = document.querySelector("#unity-fullscreen-button");
       var warningBanner = document.querySelector("#unity-warning");
       var webXRButton = document.querySelector("#unity-webxr-button");
+      var fpsCapInput = document.querySelector("#unity-fps-cap");
+      var fpsValue = document.querySelector("#unity-fps-value");
 
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
@@ -102,14 +109,25 @@
 
       loadingBar.style.display = "block";
 
+      function setWebXRButtonState(available) {
+        webXRButton.style.background = available ? '#34c759' : '#d72638';
+        webXRButton.style.color = '#ffffff';
+        webXRButton.textContent = available ? 'Open in VR' : 'VR Unavailable';
+        webXRButton.title = available ? 'Launch immersive VR' : 'VR is not available in this browser';
+        webXRButton.disabled = !available;
+        webXRButton.style.opacity = available ? '1' : '0.9';
+      }
+
       function requestWebXR() {
         if (!navigator.xr || !navigator.xr.requestSession) {
+          setWebXRButtonState(false);
           unityShowBanner("This browser does not support WebXR.", "warning");
           return;
         }
 
         navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
           if (!supported) {
+            setWebXRButtonState(false);
             unityShowBanner("This browser does not support immersive VR.", "warning");
             return;
           }
@@ -118,6 +136,7 @@
             optionalFeatures: ['local-floor', 'hand-tracking'],
             requiredFeatures: ['local-floor']
           }).then((session) => {
+            setWebXRButtonState(true);
             unityShowBanner("WebXR started. Your headset should now switch into VR mode.", "warning");
             console.log('WebXR session started:', session);
           }).catch((error) => {
@@ -126,24 +145,84 @@
           });
         }).catch((error) => {
           console.warn('WebXR capability check failed:', error);
+          setWebXRButtonState(false);
           unityShowBanner("This device could not check VR support.", "warning");
         });
       }
 
       webXRButton.onclick = requestWebXR;
+      setWebXRButtonState(false);
 
       if (navigator.xr && navigator.xr.isSessionSupported) {
         navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-          if (!supported) {
-            webXRButton.textContent = 'VR Not Supported';
-            webXRButton.style.opacity = '0.75';
-          }
+          setWebXRButtonState(Boolean(supported));
         }).catch(() => {
-          webXRButton.textContent = 'Open in VR';
+          setWebXRButtonState(false);
         });
-      } else {
-        webXRButton.textContent = 'Open in VR';
       }
+
+      function installFpsCap() {
+        if (window.__gtagwebFpsCapInstalled) {
+          return;
+        }
+
+        var nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+        var nativeCancelAnimationFrame = window.cancelAnimationFrame.bind(window);
+        var fpsLimit = 60;
+        var rafMap = {};
+        var nextId = 1;
+
+        function scheduleFrame(callback) {
+          var id = nextId++;
+          rafMap[id] = nativeRequestAnimationFrame(function(timestamp) {
+            var lastTimestamp = rafMap[id + 1000000];
+            delete rafMap[id];
+            if (lastTimestamp !== undefined && timestamp - lastTimestamp < 1000 / fpsLimit) {
+              var remaining = (1000 / fpsLimit) - (timestamp - lastTimestamp);
+              rafMap[id] = setTimeout(function() {
+                delete rafMap[id];
+                callback(timestamp + remaining);
+              }, remaining);
+              return;
+            }
+            rafMap[id + 1000000] = timestamp;
+            callback(timestamp);
+          });
+          return id;
+        }
+
+        window.requestAnimationFrame = function(callback) {
+          return scheduleFrame(callback);
+        };
+
+        window.cancelAnimationFrame = function(id) {
+          if (rafMap[id]) {
+            clearTimeout(rafMap[id]);
+            delete rafMap[id];
+          }
+          return nativeCancelAnimationFrame(id);
+        };
+
+        window.__gtagwebFpsCapInstalled = true;
+        window.__gtagwebSetFpsLimit = function(limit) {
+          fpsLimit = Math.max(1, Math.min(250, Number(limit) || 60));
+        };
+      }
+
+      function updateFpsCap(value) {
+        var fps = Math.max(1, Math.min(250, Number(value) || 60));
+        fpsValue.textContent = fps;
+        fpsCapInput.value = fps;
+        if (window.__gtagwebSetFpsLimit) {
+          window.__gtagwebSetFpsLimit(fps);
+        }
+      }
+
+      installFpsCap();
+      fpsCapInput.addEventListener('input', function(event) {
+        updateFpsCap(event.target.value);
+      });
+      updateFpsCap(fpsCapInput.value);
 
       var script = document.createElement("script");
       script.src = loaderUrl;
