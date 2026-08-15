@@ -23,6 +23,7 @@
         <div id="unity-build-title">gorilla tag web</div>
       </div>
     </div>
+    <button id="unity-webxr-button" type="button">Open in VR</button>
     <script>
 
       var container = document.querySelector("#unity-container");
@@ -31,6 +32,7 @@
       var progressBarFull = document.querySelector("#unity-progress-bar-full");
       var fullscreenButton = document.querySelector("#unity-fullscreen-button");
       var warningBanner = document.querySelector("#unity-warning");
+      var webXRButton = document.querySelector("#unity-webxr-button");
 
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
@@ -99,6 +101,43 @@
       }
 
       loadingBar.style.display = "block";
+
+      function requestWebXR() {
+        if (!navigator.xr || !navigator.xr.requestSession) {
+          unityShowBanner("This browser does not support WebXR.", "warning");
+          return;
+        }
+
+        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+          if (!supported) {
+            unityShowBanner("This browser does not support immersive VR.", "warning");
+            return;
+          }
+
+          navigator.xr.requestSession('immersive-vr', {
+            optionalFeatures: ['local-floor', 'hand-tracking'],
+            requiredFeatures: ['local-floor']
+          }).then((session) => {
+            unityShowBanner("WebXR started. Your headset should now switch into VR mode.", "warning");
+            console.log('WebXR session started:', session);
+          }).catch((error) => {
+            console.warn('WebXR request failed:', error);
+            unityShowBanner("The VR request was blocked. Tap the button again when the page is ready.", "warning");
+          });
+        }).catch((error) => {
+          console.warn('WebXR capability check failed:', error);
+          unityShowBanner("This device could not check VR support.", "warning");
+        });
+      }
+
+      if (navigator.xr && navigator.xr.isSessionSupported) {
+        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+          if (supported) {
+            webXRButton.style.display = 'block';
+            webXRButton.onclick = requestWebXR;
+          }
+        });
+      }
 
       var script = document.createElement("script");
       script.src = loaderUrl;
