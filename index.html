@@ -19,13 +19,15 @@
       <div id="unity-warning"> </div>
       <div id="unity-footer">
         <div id="unity-webgl-logo"></div>
-        <div id="unity-fps-wrap">
-          <label for="unity-fps-cap" style="font-size: 12px;">FPS</label>
-          <input id="unity-fps-cap" type="range" min="1" max="250" value="60" />
-          <output id="unity-fps-value" for="unity-fps-cap">60</output>
+        <div id="unity-fps-panel">
+          <span id="unity-fps-label">FPS</span>
+          <input id="unity-fps-input" type="number" min="1" max="250" step="1" value="60" inputmode="numeric" aria-label="FPS cap" />
         </div>
-        <button id="unity-webxr-button" type="button">VR Unavailable</button>
-        <div id="unity-fullscreen-button"></div>
+        <div id="unity-vr-panel">
+          <span id="unity-vr-label">VR</span>
+          <button id="unity-webxr-button" type="button">VR Unavailable</button>
+        </div>
+        <div id="unity-fullscreen-button" title="Fullscreen"></div>
         <div id="unity-build-title">gorilla tag web</div>
       </div>
     </div>
@@ -38,8 +40,7 @@
       var fullscreenButton = document.querySelector("#unity-fullscreen-button");
       var warningBanner = document.querySelector("#unity-warning");
       var webXRButton = document.querySelector("#unity-webxr-button");
-      var fpsCapInput = document.querySelector("#unity-fps-cap");
-      var fpsValue = document.querySelector("#unity-fps-value");
+      var fpsInput = document.querySelector("#unity-fps-input");
 
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
@@ -174,8 +175,9 @@
 
         function scheduleFrame(callback) {
           var id = nextId++;
+          var lastTimestamp = rafMap[id + 1000000];
+
           rafMap[id] = nativeRequestAnimationFrame(function(timestamp) {
-            var lastTimestamp = rafMap[id + 1000000];
             delete rafMap[id];
             if (lastTimestamp !== undefined && timestamp - lastTimestamp < 1000 / fpsLimit) {
               var remaining = (1000 / fpsLimit) - (timestamp - lastTimestamp);
@@ -211,18 +213,23 @@
 
       function updateFpsCap(value) {
         var fps = Math.max(1, Math.min(250, Number(value) || 60));
-        fpsValue.textContent = fps;
-        fpsCapInput.value = fps;
+        fpsInput.value = fps;
         if (window.__gtagwebSetFpsLimit) {
           window.__gtagwebSetFpsLimit(fps);
         }
       }
 
       installFpsCap();
-      fpsCapInput.addEventListener('input', function(event) {
+      fpsInput.addEventListener('change', function(event) {
         updateFpsCap(event.target.value);
       });
-      updateFpsCap(fpsCapInput.value);
+      fpsInput.addEventListener('input', function(event) {
+        if (event.target.value === '') {
+          return;
+        }
+        updateFpsCap(event.target.value);
+      });
+      updateFpsCap(fpsInput.value);
 
       var script = document.createElement("script");
       script.src = loaderUrl;
